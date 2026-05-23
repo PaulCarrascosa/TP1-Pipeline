@@ -1,15 +1,30 @@
-"""Books SQLAlchemy model"""
-from sqlalchemy import Column, String, Integer
+from sqlalchemy import Column, Integer, String, Text, Index, CheckConstraint
+from sqlalchemy.orm import relationship
+from datetime import datetime
+
 from .base import Base
 
 
 class Book(Base):
-    """Book model"""
-    __tablename__ = "books"
-    
-    title = Column(String(255), index=True)
-    author = Column(String(255))
-    isbn = Column(String(13), unique=True, index=True)
-    description = Column(String(1000), nullable=True)
-    available_copies = Column(Integer, default=1)
-    total_copies = Column(Integer, default=1)
+    title = Column(String(100), nullable=False, index=True)
+    author = Column(String(100), nullable=False, index=True)
+    isbn = Column(String(13), nullable=False, unique=True, index=True)
+    publication_year = Column(Integer, nullable=False)
+    description = Column(Text, nullable=True)
+    quantity = Column(Integer, nullable=False, default=0)
+    publisher = Column(String(100), nullable=True)
+    language = Column(String(50), nullable=True)
+    pages = Column(Integer, nullable=True)
+
+    __table_args__ = (
+        CheckConstraint(
+            'publication_year >= 1000 AND publication_year <= %d' % datetime.now().year,
+            name='check_publication_year'
+        ),
+        CheckConstraint('quantity >= 0', name='check_quantity'),
+        CheckConstraint('pages IS NULL OR pages > 0', name='check_pages'),
+        Index('idx_book_title_author', 'title', 'author'),
+    )
+
+    loans = relationship("Loan", back_populates="book", cascade="all, delete-orphan")
+    categories = relationship("Category", secondary="book_category", back_populates="books")

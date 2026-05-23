@@ -28,7 +28,10 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
 
     def create(self, *, obj_in: CreateSchemaType) -> ModelType:
         """Create new object"""
-        obj_in_data = jsonable_encoder(obj_in)
+        if isinstance(obj_in, dict):
+            obj_in_data = obj_in
+        else:
+            obj_in_data = obj_in.model_dump()
         db_obj = self.model(**obj_in_data)
         self.db.add(db_obj)
         self.db.commit()

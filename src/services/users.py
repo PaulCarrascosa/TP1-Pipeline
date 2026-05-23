@@ -1,29 +1,60 @@
-"""Users service"""
-from typing import List, Optional
-from sqlalchemy.orm import Session
-from ..models.users import User
+from typing import Optional, List, Any, Dict, Union
+
 from ..repositories.users import UserRepository
+from ..models.users import User
+from ..api.schemas.users import UserCreate, UserUpdate
+from ..utils.security import get_password_hash, verify_password
+from .base import BaseService
 
 
-class UserService:
-    """Service for user operations"""
-    
-    def __init__(self, db: Session):
-        self.db = db
-        self.repository = UserRepository(User, db)
-    
-    def get_user(self, user_id: int) -> Optional[User]:
-        """Get a user by ID"""
-        return self.repository.get(user_id)
-    
-    def get_user_by_email(self, email: str) -> Optional[User]:
-        """Get a user by email"""
-        return self.repository.get_by_email(email)
-    
-    def list_users(self, skip: int = 0, limit: int = 100) -> List[User]:
-        """List all users"""
-        return self.repository.get_multi(skip=skip, limit=limit)
-    
-    def get_active_users(self) -> List[User]:
-        """Get active users"""
-        return self.repository.get_active_users()
+class UserService(BaseService[User, UserCreate, UserUpdate]):
+    def __init__(self, repository: UserRepository):
+        super().__init__(repository)
+        self.repository = repository
+
+    def get_by_email(self, *, email: str) -> Optional[User]:
+        return self.repository.get_by_email(email=email)
+
+    def create(self, *, obj_in: UserCreate) -> User:
+        existing_user = self.get_by_email(email=obj_in.email)
+        if existing_user:
+            raise ValueError("L'email est déjà utilisé")
+
+        hashed_password = get_password_hash(obj_in.password)
+        user_data = obj_in.model_dump()
+        del user_data["password"]
+        user_data["hashed_password"] = hashed_password
+
+        return self.repository.create(obj_in=user_data)
+
+    def update(
+        self,
+        *,
+        db_obj: User,
+        obj_in: Union[UserUpdate, Dict[str, Any]]
+    ) -> User:
+        if isinstance(obj_in, dict):
+            update_data = obj_in
+        else:
+            update_data = obj_in.model_dump(exclude_unset=True)
+
+        if "password" in update_data and update_data["password"]:
+            hashed_password = get_password_hash(update_data["password"])
+            update_data["hashed_password"] = hashed_password
+            del update_data["password"]
+
+        return super().update(db_obj=db_obj, obj_in=update_data)
+
+    def authenticate(self, *, email: str, password: str) -> Optional[User]:
+        user = self.get_by_email(email=email)
+        if not user:
+            return None
+        if not verify_password(password, user.hashed_password):
+            return None
+        return user
+
+    def is_active(self, *, user: User) -> bool:
+        return user.is_active
+
+    def is_admin(self, *, user: User) -> bool:
+        return user.is_admin

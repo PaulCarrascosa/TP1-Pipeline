@@ -1,19 +1,101 @@
-"""Books repository"""
-from typing import List, Optional
-from sqlalchemy.orm import Session
-from ..models.books import Book
+from sqlalchemy.orm import joinedload
+from sqlalchemy import func, or_
+from typing import List, Optional, Dict, Any
+
 from .base import BaseRepository
+from ..models.books import Book
+from ..models.categories import Category, book_category
+from ..utils.cache import cache, invalidate_cache
 
 
 class BookRepository(BaseRepository):
-    """Repository for Book model"""
-    
-    def get_by_isbn(self, isbn: str) -> Optional[Book]:
-        """Get book by ISBN"""
-        return self.db.query(self.model).filter(self.model.isbn == isbn).first()
-    
-    def get_available_books(self, limit: int = 100) -> List[Book]:
-        """Get books with available copies"""
-        return self.db.query(self.model).filter(
-            self.model.available_copies > 0
-        ).limit(limit).all()
+    def get_by_isbn(self, *, isbn: str) -> Optional[Book]:
+        return self.db.query(Book).filter(Book.isbn == isbn).first()
+
+    def get_by_title(self, *, title: str) -> List[Book]:
+        return self.db.query(Book).filter(Book.title.ilike(f"%{title}%")).all()
+
+    def get_by_author(self, *, author: str) -> List[Book]:
+        return self.db.query(Book).filter(Book.author.ilike(f"%{author}%")).all()
+
+    def get_with_categories(self, *, id: int) -> Optional[Book]:
+        return (
+            self.db.query(Book)
+            .options(joinedload(Book.categories))
+            .filter(Book.id == id)
+            .first()
+        )
+
+    def get_multi_with_categories(self, *, skip: int = 0, limit: int = 100) -> List[Book]:
+        return (
+            self.db.query(Book)
+            .options(joinedload(Book.categories))
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
+
+    def search(self, *, query: str) -> List[Book]:
+        return self.db.query(Book).filter(
+            or_(
+                Book.title.ilike(f"%{query}%"),
+                Book.author.ilike(f"%{query}%"),
+                Book.isbn.ilike(f"%{query}%")
+            )
+        ).all()
+
+    def get_by_category(self, *, category_id: int, skip: int = 0, limit: int = 100) -> List[Book]:
+        return (
+            self.db.query(Book)
+            .join(book_category)
+            .filter(book_category.c.category_id == category_id)
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
+
+    def add_category(self, *, book_id: int, category_id: int) -> None:
+        book = self.get(id=book_id)
+        if not book:
+            raise ValueError(f"Livre avec l'ID {book_id} non trouvé")
+        category = self.db.query(Category).filter(Category.id == category_id).first()
+        if not category:
+            raise ValueError(f"Catégorie avec l'ID {category_id} non trouvée")
+        book.categories.append(category)
+        self.db.commit()
+
+    def remove_category(self, *, book_id: int, category_id: int) -> None:
+        book = self.get(id=book_id)
+        if not book:
+            raise ValueError(f"Livre avec l'ID {book_id} non trouvé")
+        category = self.db.query(Category).filter(Category.id == category_id).first()
+        if not category:
+            raise ValueError(f"Catégorie avec l'ID {category_id} non trouvée")
+        book.categories.remove(category)
+        self.db.commit()
+
+    @cache(expiry=60)
+    def get_stats(self) -> Dict[str, Any]:
+        total_books = self.db.query(func.sum(Book.quantity)).scalar() or 0
+        unique_books = self.db.query(func.count(Book.id)).scalar() or 0
+        avg_publication_year = self.db.query(func.avg(Book.publication_year)).scalar() or 0
+        return {
+            "total_books": total_books,
+            "unique_books": unique_books,
+            "avg_publication_year": avg_publication_year
+        }
+
+    def create(self, *, obj_in: Any) -> Book:
+        book = super().create(obj_in=obj_in)
+        invalidate_cache("src.repositories.books")
+        return book
+
+    def update(self, *, db_obj: Book, obj_in: Any) -> Book:
+        book = super().update(db_obj=db_obj, obj_in=obj_in)
+        invalidate_cache("src.repositories.books")
+        return book
+
+    def remove(self, *, id: int) -> Book:
+        book = super().remove(id=id)
+        invalidate_cache("src.repositories.books")
+        return book

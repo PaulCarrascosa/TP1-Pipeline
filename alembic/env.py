@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.config import settings
 from src.models.base import Base
+import src.models  # noqa: F401 — ensure all models are registered for autogenerate
 
 # this is the Alembic Config object, which provides
 # the values within the .ini file in use.
@@ -20,7 +21,10 @@ config = context.config
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    try:
+        fileConfig(config.config_file_name)
+    except Exception:
+        pass
 
 # add your model's MetaData object here
 # for 'autogenerate' support
