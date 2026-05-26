@@ -218,17 +218,138 @@ Repository Pattern générique pour les opérations CRUD
 ### `src/utils/security.py`
 Utilities pour la sécurité : password hashing avec bcrypt, JWT token generation
 
-## Prochaines étapes
+## Frontend
 
-Pour développer davantage:
+### Lancer le frontend
 
-1. Implémenter les validations métier dans les services
-2. Ajouter l'authentification JWT complète
-3. Implémenter les tests unitaires pour chaque couche
-4. Ajouter la pagination avancée
-5. Implémenter les filtres et recherche
-6. Ajouter la gestion des erreurs personnalisées
-7. Implémenter le logging
+Le frontend est une application HTML/JS statique. Il faut le servir via HTTP (ne pas ouvrir le fichier directement dans le navigateur).
+
+Dans un terminal séparé :
+
+```bash
+cd frontend
+python -m http.server 5000
+```
+
+Accède ensuite à `http://localhost:5000`.
+
+> Le backend doit tourner sur le port 8000 en même temps.
+
+---
+
+## Déploiement sur VM Vagrant
+
+### Prérequis
+
+- [Vagrant](https://www.vagrantup.com/)
+- [VirtualBox](https://www.virtualbox.org/)
+
+### Lancer la VM
+
+```powershell
+vagrant up
+vagrant ssh
+```
+
+### Lancer le projet dans la VM
+
+```bash
+cd /app
+source .venv/bin/activate
+uvicorn src.main:app --host 0.0.0.0 --port 8000
+```
+
+L'API est accessible sur `http://192.168.50.4:8000`.
+
+### Mettre à jour le projet
+
+```bash
+cd /app
+git pull origin main
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+### Éteindre la VM
+
+```powershell
+vagrant halt
+```
+
+---
+
+## CI/CD avec Jenkins
+
+### Prérequis Jenkins
+
+- Plugin **SonarQube Scanner** installé
+- Plugin **Workspace Cleanup** installé
+- `sonar-scanner` installé sur la VM (`/usr/local/bin/sonar-scanner`)
+
+### Configuration Jenkins
+
+1. **Manage Jenkins > Configure System > SonarQube servers**
+   - Nom : `SonarQube`
+   - URL : `http://localhost:9000`
+   - Token : généré depuis SonarQube (My Account > Security > Generate Tokens)
+
+2. Créer un job **Pipeline** et coller le contenu du `Jenkinsfile`
+
+### Pipeline
+
+Le pipeline exécute les étapes suivantes :
+
+| Étape | Description |
+|-------|-------------|
+| Checkout | Clone le repo GitHub |
+| Installer les dépendances | Via Nexus (proxy PyPI) avec fallback PyPI |
+| Tests | 26 tests avec couverture de code |
+| Analyse SonarQube | Analyse qualité du code |
+| Quality Gate | Vérification du seuil qualité |
+| Vérification démarrage | Démarre l'API et vérifie qu'elle répond |
+
+---
+
+## SonarQube
+
+### Installation
+
+```bash
+wget https://binaries.sonarsource.com/Distribution/sonarqube/sonarqube-10.4.1.88267.zip
+sudo unzip sonarqube-10.4.1.88267.zip -d /opt
+sudo mv /opt/sonarqube-10.4.1.88267 /opt/sonarqube
+sudo useradd -r -s /bin/false sonarqube
+sudo chown -R sonarqube:sonarqube /opt/sonarqube
+sudo systemctl start sonarqube
+```
+
+> Requiert Java 17 (`sudo apt install openjdk-17-jdk`)
+
+### Accès
+
+- URL : `http://localhost:9000`
+- Credentials par défaut : `admin` / `admin`
+
+---
+
+## Nexus
+
+### Lancer via Docker
+
+```bash
+sudo docker run -d -p 8081:8081 --name nexus sonatype/nexus3
+```
+
+### Configuration
+
+1. Accède à `http://localhost:8081`
+2. Récupère le mot de passe admin :
+   ```bash
+   sudo docker exec nexus cat /nexus-data/admin.password
+   ```
+3. Crée un repo **pypi (proxy)** nommé `pypi-proxy` pointant sur `https://pypi.org/simple/`
+
+---
 
 ## Ressources
 
